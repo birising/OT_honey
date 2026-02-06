@@ -111,6 +111,7 @@
         <div class="chart-values">
             <div class="cv-item"><span class="cv-dot" style="background:#3498db"></span><span class="cv-label">DO:</span><span class="cv-value" id="cv-do">--</span><span class="cv-label">mg/L</span></div>
             <div class="cv-item"><span class="cv-dot" style="background:#e74c3c"></span><span class="cv-label">SP:</span><span class="cv-value" id="cv-do-sp">--</span><span class="cv-label">mg/L</span></div>
+            <div class="cv-item"><span class="cv-dot" style="background:#f39c12"></span><span class="cv-label">LO:</span><span class="cv-value" style="color:#f39c12">1.50</span><span class="cv-label">mg/L</span></div>
         </div>
         <canvas id="chartDO"></canvas>
     </div>
@@ -119,6 +120,7 @@
         <div class="chart-values">
             <div class="cv-item"><span class="cv-dot" style="background:#2980b9"></span><span class="cv-label">IN:</span><span class="cv-value" id="cv-qin">--</span><span class="cv-label">m3/h</span></div>
             <div class="cv-item"><span class="cv-dot" style="background:#27ae60"></span><span class="cv-label">OUT:</span><span class="cv-value" id="cv-qout">--</span><span class="cv-label">m3/h</span></div>
+            <div class="cv-item"><span class="cv-dot" style="background:#95a5a6"></span><span class="cv-label">DES:</span><span class="cv-value" style="color:#95a5a6">15.0</span><span class="cv-label">m3/h</span></div>
         </div>
         <canvas id="chartFlow"></canvas>
     </div>
@@ -127,6 +129,7 @@
         <div class="chart-values">
             <div class="cv-item"><span class="cv-dot" style="background:#8e44ad"></span><span class="cv-label">WetWell:</span><span class="cv-value" id="cv-lt101">--</span><span class="cv-label">m</span></div>
             <div class="cv-item"><span class="cv-dot" style="background:#f39c12"></span><span class="cv-label">Clarifier:</span><span class="cv-value" id="cv-lt401">--</span><span class="cv-label">m</span></div>
+            <div class="cv-item"><span class="cv-dot" style="background:#e74c3c"></span><span class="cv-label">HH:</span><span class="cv-value" style="color:#e74c3c">2.50</span><span class="cv-label">m</span></div>
         </div>
         <canvas id="chartLevels"></canvas>
     </div>
@@ -135,6 +138,7 @@
         <div class="chart-values">
             <div class="cv-item"><span class="cv-dot" style="background:#e74c3c"></span><span class="cv-label">COD:</span><span class="cv-value" id="cv-cod">--</span><span class="cv-label">mg/L</span></div>
             <div class="cv-item"><span class="cv-dot" style="background:#1abc9c"></span><span class="cv-label">Tank:</span><span class="cv-value" id="cv-tank">--</span><span class="cv-label">%</span></div>
+            <div class="cv-item"><span class="cv-dot" style="background:#f39c12"></span><span class="cv-label">LIM:</span><span class="cv-value" style="color:#f39c12">40.0</span><span class="cv-label">mg/L</span></div>
         </div>
         <canvas id="chartQuality"></canvas>
     </div>
@@ -176,25 +180,35 @@ function createChart(canvasId, datasets, yLabel) {
     });
 }
 
+// Constant line dataset helper
+function limitLine(label, color, dashPattern) {
+    return { label: label, borderColor: color, borderDash: dashPattern || [4,4], borderWidth: 1, fill: false, data: [], pointRadius: 0 };
+}
+
 function initCharts() {
     charts.do = createChart('chartDO', [
         { label: 'DO', borderColor: '#3498db', fill: false, data: [] },
-        { label: 'SP', borderColor: '#e74c3c', borderDash: [5,5], fill: false, data: [] }
+        { label: 'SP', borderColor: '#e74c3c', borderDash: [5,5], fill: false, data: [] },
+        limitLine('Low Alarm 1.5', '#f39c12')
     ], 'mg/L');
 
     charts.flow = createChart('chartFlow', [
         { label: 'Influent', borderColor: '#2980b9', fill: false, data: [] },
-        { label: 'Effluent', borderColor: '#27ae60', fill: false, data: [] }
+        { label: 'Effluent', borderColor: '#27ae60', fill: false, data: [] },
+        limitLine('Design 15.0', '#95a5a6', [2,4])
     ], 'm3/h');
 
     charts.levels = createChart('chartLevels', [
         { label: 'Wet Well', borderColor: '#8e44ad', fill: false, data: [] },
-        { label: 'Clarifier', borderColor: '#f39c12', fill: false, data: [] }
+        { label: 'Clarifier', borderColor: '#f39c12', fill: false, data: [] },
+        limitLine('HH Alarm 2.5', '#e74c3c')
     ], 'm');
 
     charts.quality = createChart('chartQuality', [
         { label: 'COD', borderColor: '#e74c3c', fill: false, data: [] },
-        { label: 'Chem Tank', borderColor: '#1abc9c', fill: false, data: [] }
+        { label: 'Chem Tank', borderColor: '#1abc9c', fill: false, data: [] },
+        limitLine('COD Limit 40', '#f39c12'),
+        limitLine('Low Tank 10%', '#e74c3c', [2,4])
     ], '');
 }
 
@@ -263,28 +277,37 @@ function fetchTrends() {
         cv('cv-cod', 'WWTP01:EFFLUENT:COD501.PV', 1);
         cv('cv-tank', 'WWTP01:CHEMICAL:TANK501.LEVEL', 1);
 
-        // DO chart
+        // Constant array helper
+        var n = data.length;
+        function constArr(v) { var a = []; for (var i = 0; i < n; i++) a.push(v); return a; }
+
+        // DO chart (PV + SP + Low alarm 1.5)
         charts.do.data.labels = labels;
         charts.do.data.datasets[0].data = vals('WWTP01:AERATION:DO301.PV');
         charts.do.data.datasets[1].data = vals('WWTP01:AERATION:DO301.SP');
+        charts.do.data.datasets[2].data = constArr(1.5);
         charts.do.update();
 
-        // Flow chart
+        // Flow chart (Influent + Effluent + Design capacity 15.0)
         charts.flow.data.labels = labels;
         charts.flow.data.datasets[0].data = vals('WWTP01:INFLUENT:Q_IN.PV');
         charts.flow.data.datasets[1].data = vals('WWTP01:EFFLUENT:Q_OUT.PV');
+        charts.flow.data.datasets[2].data = constArr(15.0);
         charts.flow.update();
 
-        // Levels chart
+        // Levels chart (Wet Well + Clarifier + HH alarm 2.5)
         charts.levels.data.labels = labels;
         charts.levels.data.datasets[0].data = vals('WWTP01:INFLUENT:LT101.PV');
         charts.levels.data.datasets[1].data = vals('WWTP01:CLARIFIER:LT401.PV');
+        charts.levels.data.datasets[2].data = constArr(2.5);
         charts.levels.update();
 
-        // Quality chart
+        // Quality chart (COD + Chem Tank + COD limit 40 + Low tank 10%)
         charts.quality.data.labels = labels;
         charts.quality.data.datasets[0].data = vals('WWTP01:EFFLUENT:COD501.PV');
         charts.quality.data.datasets[1].data = vals('WWTP01:CHEMICAL:TANK501.LEVEL');
+        charts.quality.data.datasets[2].data = constArr(40.0);
+        charts.quality.data.datasets[3].data = constArr(10.0);
         charts.quality.update();
     })
     .catch(function(err) {
