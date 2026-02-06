@@ -1,0 +1,119 @@
+services:
+  simulator:
+    build:
+      context: ./simulator
+      dockerfile: Dockerfile
+    container_name: wwtp_simulator
+    environment:
+      - RANDOM_SEED=${RANDOM_SEED:-42}
+      - DETERMINISTIC=${DETERMINISTIC:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./simulator:/app:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - ot_network
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=200m
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/api/snapshot', timeout=2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  plc_modbus:
+    build:
+      context: ./plc_modbus
+      dockerfile: Dockerfile
+    container_name: wwtp_modbus
+    environment:
+      - SIMULATOR_URL=http://simulator:8080
+      - MODBUS_PORT=502
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./plc_modbus:/app:ro
+    ports:
+      - "502:502"
+    networks:
+      - ot_network
+    depends_on:
+      - simulator
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=200m
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+
+  snmp_agent:
+    build:
+      context: ./snmp_agent
+      dockerfile: Dockerfile
+    container_name: wwtp_snmp
+    environment:
+      - SNMP_PORT=161
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./snmp_agent:/app:ro
+    ports:
+      - "161:161/udp"
+    networks:
+      - ot_network
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=200m
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+
+  hmi_web:
+    build:
+      context: ./hmi_web
+      dockerfile: Dockerfile
+    container_name: wwtp_hmi
+    environment:
+      - SIMULATOR_URL=http://simulator:8080
+      - FLASK_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./hmi_web:/app:ro
+    ports:
+      - "80:80"
+    networks:
+      - ot_network
+    depends_on:
+      - simulator
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=200m
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  ot_network:
+    driver: bridge
+    internal: false
+
+

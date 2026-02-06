@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Alarms{% endblock %}
+
+{% block extra_css %}
+<style>
+    .alarm-controls {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 8px;
+        align-items: center;
+    }
+    .filter-btn {
+        padding: 4px 12px;
+        border: 1px solid #7f8c8d;
+        background: #ecf0f1;
+        color: #333;
+        cursor: pointer;
+        border-radius: 2px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+    .filter-btn.active { background: #2c3e50; color: white; border-color: #2c3e50; }
+    .filter-btn:hover { background: #bdc3c7; }
+    .filter-btn.active:hover { background: #34495e; }
+    .alarm-stats {
+        margin-left: auto;
+        font-size: 11px;
+        font-family: monospace;
+        color: #7f8c8d;
+        display: flex;
+        gap: 12px;
+    }
+    .alarm-stats .as-count { font-weight: bold; color: #2c3e50; }
+    .alarm-table { border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
+    .alarm-table th { font-size: 11px; text-transform: uppercase; }
+    .alarm-table td { font-size: 12px; }
+    .priority-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: bold;
+        color: white;
+    }
+    .priority-CRITICAL { background: #8e44ad; }
+    .priority-HIGH { background: #e74c3c; }
+    .priority-MEDIUM { background: #f39c12; }
+    .priority-LOW { background: #f1c40f; color: #333; }
+    .unacked { animation: blink 1s infinite; }
+    .ack-btn {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 3px 10px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 11px;
+    }
+    .ack-btn:hover { background: #2980b9; }
+    .ack-btn:disabled { background: #95a5a6; cursor: default; }
+    .no-alarms {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 40px;
+        text-align: center;
+        color: #27ae60;
+        font-size: 14px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2 style="margin:0 0 8px 0; font-size:14px; color:#2c3e50; text-transform:uppercase; letter-spacing:0.5px;">Alarm Summary (ISA-18.2)</h2>
+
+<div class="alarm-controls">
+    <span style="font-size:11px; color:#7f8c8d; font-weight:600;">FILTER:</span>
+    <button class="filter-btn active" onclick="setFilter('ALL', this)">ALL</button>
+    <button class="filter-btn" onclick="setFilter('CRITICAL', this)">CRITICAL</button>
+    <button class="filter-btn" onclick="setFilter('HIGH', this)">HIGH</button>
+    <button class="filter-btn" onclick="setFilter('MEDIUM', this)">MEDIUM</button>
+    <button class="filter-btn" onclick="setFilter('LOW', this)">LOW</button>
+    <div class="alarm-stats">
+        <span>Total: <span class="as-count" id="alarm-total">0</span></span>
+        <span>Active: <span class="as-count" id="alarm-active" style="color:#e74c3c">0</span></span>
+        <span>Refresh: 5s</span>
+    </div>
+</div>
+
+<div id="alarm-container">
+    <div class="no-alarms">Loading alarms...</div>
+</div>
+
+<script>
+var currentFilter = 'ALL';
+var alarmData = [];
+
+function setFilter(filter, btn) {
+    currentFilter = filter;
+    document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    renderAlarms();
+}
+
+function renderAlarms() {
+    var filtered = alarmData;
+    if (currentFilter !== 'ALL') {
+        filtered = alarmData.filter(function(a) { return a.severity_text === currentFilter; });
+    }
+
+    document.getElementById('alarm-total').textContent = alarmData.length;
+    var active = alarmData.filter(function(a) { return !a.acknowledged; });
+    document.getElementById('alarm-active').textContent = active.length;
+
+    var container = document.getElementById('alarm-container');
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="no-alarms">' + (alarmData.length === 0 ? 'No active alarms' : 'No alarms matching filter') + '</div>';
+        return;
+    }
+
+    var html = '<table class="alarm-table"><tr><th>Time</th><th>Tag</th><th>Description</th><th>Priority</th><th>State</th><th>Value</th><th>Ack</th></tr>';
+    for (var i = 0; i < filtered.length; i++) {
+        var a = filtered[i];
+        var rowClass = a.acknowledged ? '' : ' class="unacked"';
+        html += '<tr' + rowClass + '>';
+        html += '<td style="font-family:monospace;font-size:11px;">' + escHtml(a.timestamp) + '</td>';
+        html += '<td style="font-family:monospace;font-size:11px;">' + escHtml(a.tag) + '</td>';
+        html += '<td>' + escHtml(a.text) + '</td>';
+        html += '<td><span class="priority-badge priority-' + escHtml(a.severity_text) + '">' + escHtml(a.severity_text) + '</span></td>';
+        html += '<td>' + (a.acknowledged ? 'ACK' : 'ACTIVE') + '</td>';
+        html += '<td style="font-family:monospace;">' + (a.value !== undefined ? a.value.toFixed(2) : '--') + '</td>';
+        html += '<td>';
+        if (a.acknowledged) {
+            html += '<button class="ack-btn" disabled>ACK</button>';
+        } else {
+            html += '<button class="ack-btn" onclick="ackAlarm(\'' + escHtml(a.id) + '\')">ACK</button>';
+        }
+        html += '</td></tr>';
+    }
+    html += '</table>';
+    container.innerHTML = html;
+}
+
+function escHtml(s) {
+    if (s === undefined || s === null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fetchAlarms() {
+    fetch('/api/alarms/list')
+    .then(function(r) { return r.ok ? r.json() : []; })
+    .then(function(data) {
+        alarmData = data;
+        renderAlarms();
+    })
+    .catch(function(err) {
+        console.error('Alarm fetch error:', err);
+    });
+}
+
+function ackAlarm(alarmId) {
+    fetch('/api/alarm/acknowledge', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: alarmId})
+    }).then(function() { fetchAlarms(); });
+}
+
+fetchAlarms();
+setInterval(fetchAlarms, 5000);
+</script>
+{% endblock %}

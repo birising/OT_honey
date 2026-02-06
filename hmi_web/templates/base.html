@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WWTP HMI - {% block title %}Control System{% endblock %}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f0f0f0;
+            color: #333;
+            padding-bottom: 32px;
+        }
+        .safety-banner {
+            background: #cc0000;
+            color: white;
+            text-align: center;
+            padding: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        .header {
+            background: #2c3e50;
+            padding: 8px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: white;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 13px;
+        }
+        .mode-badge {
+            padding: 3px 10px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .mode-auto { background: #27ae60; color: white; }
+        .mode-manual { background: #f39c12; color: white; }
+        .mode-maintenance { background: #e74c3c; color: white; }
+        .kill-switch-btn {
+            background: #e74c3c;
+            color: white;
+            border: 2px solid #c0392b;
+            padding: 4px 12px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 11px;
+            border-radius: 3px;
+        }
+        .kill-switch-btn:hover { background: #c0392b; }
+        .kill-switch-btn.active {
+            background: #ff0000;
+            border-color: #ff0000;
+            animation: blink 1s infinite;
+        }
+        .clock {
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .header a { color: #bdc3c7; text-decoration: none; }
+        .header a:hover { color: white; }
+        .nav {
+            background: #34495e;
+            padding: 0 20px;
+            display: flex;
+            gap: 0;
+        }
+        .nav a {
+            color: #bdc3c7;
+            text-decoration: none;
+            padding: 8px 16px;
+            display: inline-block;
+            font-size: 13px;
+            border-bottom: 2px solid transparent;
+        }
+        .nav a:hover { background: #3d566e; color: white; }
+        .nav a.active { color: white; border-bottom-color: #3498db; }
+        /* Alarm banner */
+        .alarm-banner {
+            background: #c0392b;
+            color: white;
+            padding: 6px 20px;
+            font-size: 12px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            animation: alarm-flash 2s infinite;
+        }
+        .alarm-banner.visible { display: flex; }
+        .alarm-banner .ab-icon {
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .alarm-banner .ab-text { flex: 1; }
+        .alarm-banner .ab-count {
+            background: rgba(255,255,255,0.2);
+            padding: 2px 8px;
+            border-radius: 2px;
+            font-weight: bold;
+        }
+        @keyframes alarm-flash {
+            0%, 100% { background: #c0392b; }
+            50% { background: #e74c3c; }
+        }
+        .content {
+            padding: 15px 20px;
+        }
+        /* Status bar footer */
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 28px;
+            background: #2c3e50;
+            color: #95a5a6;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            font-size: 11px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            gap: 20px;
+            z-index: 900;
+            border-top: 1px solid #1a252f;
+        }
+        .sb-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .sb-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        .sb-dot-ok { background: #27ae60; }
+        .sb-dot-fail { background: #e74c3c; animation: blink 1s infinite; }
+        .sb-label { color: #7f8c8d; }
+        .sb-value { color: #ecf0f1; font-weight: bold; }
+        .sb-alarm-count {
+            background: #e74c3c;
+            color: white;
+            padding: 1px 6px;
+            border-radius: 2px;
+            font-weight: bold;
+            font-size: 10px;
+        }
+        .sb-alarm-count.sb-no-alarms {
+            background: #27ae60;
+        }
+        .sb-separator {
+            width: 1px;
+            height: 14px;
+            background: #3d566e;
+        }
+        .sb-spacer { flex: 1; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+        th, td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #ecf0f1;
+            color: #2c3e50;
+            font-weight: 600;
+            font-size: 13px;
+        }
+        input[type="text"], input[type="password"], input[type="number"] {
+            background: white;
+            border: 1px solid #bdc3c7;
+            color: #333;
+            padding: 6px 10px;
+            border-radius: 3px;
+        }
+        button, .btn {
+            background: #3498db;
+            border: none;
+            color: white;
+            padding: 6px 14px;
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+        button:hover, .btn:hover { background: #2980b9; }
+        .btn-danger { background: #e74c3c; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-warning { background: #f39c12; }
+        .btn-warning:hover { background: #e67e22; }
+        .btn-success { background: #27ae60; }
+        .btn-success:hover { background: #219a52; }
+        .error { color: #e74c3c; }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="safety-banner">SIMULATION -- OT/ICS HONEYPOT -- NOT A REAL PLANT</div>
+    <div class="header">
+        <div>
+            <h1>WWTP Nove Mesto nad Metuji - NMM-CZ-01</h1>
+        </div>
+        <div class="header-right">
+            {% if session.username %}
+            <span class="mode-badge {% if mode is defined %}mode-{{ mode|lower }}{% else %}mode-auto{% endif %}" id="hdr-mode-badge">
+                {% if mode is defined %}{{ mode }}{% else %}AUTO{% endif %}
+            </span>
+            <button class="kill-switch-btn {% if kill_switch is defined and kill_switch %}active{% endif %}"
+                    onclick="toggleKillSwitch()" id="kill-switch-btn">
+                {% if kill_switch is defined and kill_switch %}E-STOP ACTIVE{% else %}E-STOP{% endif %}
+            </button>
+            <span class="clock" id="clock"></span>
+            <span>{{ session.username }} ({{ session.role }}) | <a href="/logout">Logout</a></span>
+            {% endif %}
+        </div>
+    </div>
+    {% if session.username %}
+    <div class="nav">
+        <a href="/overview" {% if request.path == '/overview' %}class="active"{% endif %}>Overview</a>
+        <a href="/alarms" {% if request.path == '/alarms' %}class="active"{% endif %}>Alarms</a>
+        <a href="/trends" {% if request.path == '/trends' %}class="active"{% endif %}>Trends</a>
+        <a href="/maintenance" {% if request.path == '/maintenance' %}class="active"{% endif %}>Maintenance</a>
+    </div>
+    <div class="alarm-banner" id="alarm-banner">
+        <span class="ab-icon">&#9888; ALARM</span>
+        <span class="ab-text" id="alarm-banner-text">--</span>
+        <span class="ab-count" id="alarm-banner-count">0</span>
+    </div>
+    {% endif %}
+    <div class="content">
+        {% block content %}{% endblock %}
+    </div>
+    {% if session.username %}
+    <div class="status-bar">
+        <div class="sb-item">
+            <span class="sb-dot sb-dot-ok" id="sb-comm-dot"></span>
+            <span class="sb-value" id="sb-comm-text">COMM OK</span>
+        </div>
+        <div class="sb-separator"></div>
+        <div class="sb-item">
+            <span class="sb-label">ALARMS:</span>
+            <span class="sb-alarm-count sb-no-alarms" id="sb-alarm-count">0</span>
+        </div>
+        <div class="sb-separator"></div>
+        <div class="sb-item">
+            <span class="sb-label">MODE:</span>
+            <span class="sb-value" id="sb-mode">AUTO</span>
+        </div>
+        <div class="sb-separator"></div>
+        <div class="sb-item">
+            <span class="sb-label">USER:</span>
+            <span class="sb-value">{{ session.username|upper }}</span>
+        </div>
+        <div class="sb-spacer"></div>
+        <div class="sb-item">
+            <span class="sb-value" id="sb-clock">--:--:--</span>
+            <span class="sb-label" id="sb-date"></span>
+        </div>
+    </div>
+    {% endif %}
+    <script>
+    function updateClock() {
+        var now = new Date();
+        var el = document.getElementById('clock');
+        if (el) el.textContent = now.toLocaleTimeString();
+        var sbClock = document.getElementById('sb-clock');
+        if (sbClock) sbClock.textContent = now.toLocaleTimeString();
+        var sbDate = document.getElementById('sb-date');
+        if (sbDate) sbDate.textContent = now.toLocaleDateString();
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    function toggleKillSwitch() {
+        var btn = document.getElementById('kill-switch-btn');
+        var isActive = btn.classList.contains('active');
+        if (!isActive) {
+            if (!confirm('ACTIVATE EMERGENCY STOP?\nAll equipment will be stopped immediately.')) return;
+        }
+        fetch('/api/killswitch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({activate: !isActive})
+        }).then(function() { location.reload(); });
+    }
+
+    // Global status bar updater
+    var _sbCommOk = true;
+    function updateStatusBar() {
+        fetch('/api/alarms/list')
+        .then(function(r) { return r.ok ? r.json() : []; })
+        .then(function(alarms) {
+            _sbCommOk = true;
+            var dot = document.getElementById('sb-comm-dot');
+            var txt = document.getElementById('sb-comm-text');
+            if (dot) { dot.className = 'sb-dot sb-dot-ok'; }
+            if (txt) { txt.textContent = 'COMM OK'; }
+
+            var unacked = alarms.filter(function(a) { return !a.acknowledged; });
+            var countEl = document.getElementById('sb-alarm-count');
+            if (countEl) {
+                countEl.textContent = unacked.length;
+                countEl.className = unacked.length > 0 ? 'sb-alarm-count' : 'sb-alarm-count sb-no-alarms';
+            }
+
+            var banner = document.getElementById('alarm-banner');
+            var bannerText = document.getElementById('alarm-banner-text');
+            var bannerCount = document.getElementById('alarm-banner-count');
+            if (banner && unacked.length > 0) {
+                banner.className = 'alarm-banner visible';
+                bannerText.textContent = unacked[0].tag + ' - ' + unacked[0].text;
+                bannerCount.textContent = unacked.length + ' active';
+            } else if (banner) {
+                banner.className = 'alarm-banner';
+            }
+        })
+        .catch(function() {
+            _sbCommOk = false;
+            var dot = document.getElementById('sb-comm-dot');
+            var txt = document.getElementById('sb-comm-text');
+            if (dot) { dot.className = 'sb-dot sb-dot-fail'; }
+            if (txt) { txt.textContent = 'COMM FAIL'; }
+        });
+
+        fetch('/api/snapshot')
+        .then(function(r) { return r.ok ? r.json() : {}; })
+        .then(function(snap) {
+            var modeVal = 0;
+            if (snap['WWTP01:SYSTEM:GLOBAL_MODE.PV']) modeVal = snap['WWTP01:SYSTEM:GLOBAL_MODE.PV'].value;
+            var modeMap = {0: 'AUTO', 1: 'MANUAL', 2: 'MAINTENANCE'};
+            var modeStr = modeMap[Math.round(modeVal)] || 'AUTO';
+            var sbMode = document.getElementById('sb-mode');
+            if (sbMode) sbMode.textContent = modeStr;
+            var hdrBadge = document.getElementById('hdr-mode-badge');
+            if (hdrBadge) {
+                hdrBadge.textContent = modeStr;
+                hdrBadge.className = 'mode-badge mode-' + modeStr.toLowerCase();
+            }
+        })
+        .catch(function() {});
+    }
+    updateStatusBar();
+    setInterval(updateStatusBar, 5000);
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+
+{% block title %}Trends{% endblock %}
+
+{% block extra_css %}
+<style>
+    .trend-controls {
+        margin-bottom: 8px;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+    }
+    .range-btn {
+        padding: 5px 16px;
+        border: 1px solid #7f8c8d;
+        background: #ecf0f1;
+        color: #333;
+        cursor: pointer;
+        border-radius: 2px;
+        font-size: 12px;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        font-weight: 600;
+    }
+    .range-btn.active { background: #2c3e50; color: #0f0; border-color: #2c3e50; }
+    .range-btn:hover { background: #bdc3c7; }
+    .range-btn.active:hover { background: #34495e; }
+    .trend-status {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 11px;
+        font-family: monospace;
+    }
+    .comm-ok { color: #27ae60; font-weight: bold; }
+    .comm-fail { color: #e74c3c; font-weight: bold; }
+    .chart-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+    .chart-panel {
+        background: #2c3e50;
+        border: 1px solid #1a252f;
+        border-radius: 2px;
+        padding: 10px;
+    }
+    .chart-panel h3 {
+        margin: 0 0 2px 0;
+        font-size: 11px;
+        color: #ecf0f1;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .chart-panel .chart-values {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 6px;
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 11px;
+    }
+    .chart-panel .cv-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .cv-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 1px;
+    }
+    .cv-label { color: #95a5a6; }
+    .cv-value { color: #ecf0f1; font-weight: bold; }
+    canvas { max-height: 200px; }
+    .trend-error {
+        background: #fde8e8;
+        border: 1px solid #e74c3c;
+        color: #c0392b;
+        padding: 8px 12px;
+        border-radius: 3px;
+        font-size: 12px;
+        display: none;
+        margin-bottom: 8px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2 style="margin:0 0 8px 0; font-size:14px; color:#2c3e50; text-transform:uppercase; letter-spacing:0.5px;">Process Trends</h2>
+
+<div id="trend-error" class="trend-error"></div>
+
+<div class="trend-controls">
+    <span style="font-size:11px; color:#7f8c8d; font-weight:600;">TIME RANGE:</span>
+    <button class="range-btn active" onclick="setRange('1h', this)">1 HR</button>
+    <button class="range-btn" onclick="setRange('8h', this)">8 HR</button>
+    <button class="range-btn" onclick="setRange('24h', this)">24 HR</button>
+    <div class="trend-status">
+        <span id="comm-status" class="comm-ok">COMM: OK</span>
+        <span style="color:#7f8c8d;">Updated: <span id="last-trend-update">--:--:--</span></span>
+        <span style="color:#7f8c8d;">Points: <span id="trend-points">0</span></span>
+        <span style="color:#7f8c8d;">Refresh: 10s</span>
+    </div>
+</div>
+
+<div class="chart-grid">
+    <div class="chart-panel">
+        <h3>Dissolved Oxygen / Setpoint</h3>
+        <div class="chart-values">
+            <div class="cv-item"><span class="cv-dot" style="background:#3498db"></span><span class="cv-label">DO:</span><span class="cv-value" id="cv-do">--</span><span class="cv-label">mg/L</span></div>
+            <div class="cv-item"><span class="cv-dot" style="background:#e74c3c"></span><span class="cv-label">SP:</span><span class="cv-value" id="cv-do-sp">--</span><span class="cv-label">mg/L</span></div>
+        </div>
+        <canvas id="chartDO"></canvas>
+    </div>
+    <div class="chart-panel">
+        <h3>Influent / Effluent Flow</h3>
+        <div class="chart-values">
+            <div class="cv-item"><span class="cv-dot" style="background:#2980b9"></span><span class="cv-label">IN:</span><span class="cv-value" id="cv-qin">--</span><span class="cv-label">m3/h</span></div>
+            <div class="cv-item"><span class="cv-dot" style="background:#27ae60"></span><span class="cv-label">OUT:</span><span class="cv-value" id="cv-qout">--</span><span class="cv-label">m3/h</span></div>
+        </div>
+        <canvas id="chartFlow"></canvas>
+    </div>
+    <div class="chart-panel">
+        <h3>Tank Levels</h3>
+        <div class="chart-values">
+            <div class="cv-item"><span class="cv-dot" style="background:#8e44ad"></span><span class="cv-label">WetWell:</span><span class="cv-value" id="cv-lt101">--</span><span class="cv-label">m</span></div>
+            <div class="cv-item"><span class="cv-dot" style="background:#f39c12"></span><span class="cv-label">Clarifier:</span><span class="cv-value" id="cv-lt401">--</span><span class="cv-label">m</span></div>
+        </div>
+        <canvas id="chartLevels"></canvas>
+    </div>
+    <div class="chart-panel">
+        <h3>Effluent Quality / Chemical</h3>
+        <div class="chart-values">
+            <div class="cv-item"><span class="cv-dot" style="background:#e74c3c"></span><span class="cv-label">COD:</span><span class="cv-value" id="cv-cod">--</span><span class="cv-label">mg/L</span></div>
+            <div class="cv-item"><span class="cv-dot" style="background:#1abc9c"></span><span class="cv-label">Tank:</span><span class="cv-value" id="cv-tank">--</span><span class="cv-label">%</span></div>
+        </div>
+        <canvas id="chartQuality"></canvas>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+var currentRange = '1h';
+var charts = {};
+var commOk = true;
+
+function createChart(canvasId, datasets, yLabel) {
+    var ctx = document.getElementById(canvasId).getContext('2d');
+    return new Chart(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: datasets },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                x: {
+                    display: true,
+                    ticks: { font: { size: 9, family: 'monospace' }, color: '#7f8c8d', maxTicksLimit: 8 },
+                    grid: { color: 'rgba(255,255,255,0.08)' }
+                },
+                y: {
+                    display: true,
+                    title: { display: true, text: yLabel, font: { size: 10 }, color: '#95a5a6' },
+                    ticks: { font: { size: 9, family: 'monospace' }, color: '#7f8c8d' },
+                    grid: { color: 'rgba(255,255,255,0.08)' }
+                }
+            },
+            elements: { point: { radius: 0 }, line: { borderWidth: 1.5 } }
+        }
+    });
+}
+
+function initCharts() {
+    charts.do = createChart('chartDO', [
+        { label: 'DO', borderColor: '#3498db', fill: false, data: [] },
+        { label: 'SP', borderColor: '#e74c3c', borderDash: [5,5], fill: false, data: [] }
+    ], 'mg/L');
+
+    charts.flow = createChart('chartFlow', [
+        { label: 'Influent', borderColor: '#2980b9', fill: false, data: [] },
+        { label: 'Effluent', borderColor: '#27ae60', fill: false, data: [] }
+    ], 'm3/h');
+
+    charts.levels = createChart('chartLevels', [
+        { label: 'Wet Well', borderColor: '#8e44ad', fill: false, data: [] },
+        { label: 'Clarifier', borderColor: '#f39c12', fill: false, data: [] }
+    ], 'm');
+
+    charts.quality = createChart('chartQuality', [
+        { label: 'COD', borderColor: '#e74c3c', fill: false, data: [] },
+        { label: 'Chem Tank', borderColor: '#1abc9c', fill: false, data: [] }
+    ], '');
+}
+
+function showError(msg) {
+    var el = document.getElementById('trend-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+}
+
+function hideError() {
+    document.getElementById('trend-error').style.display = 'none';
+}
+
+function setCommStatus(ok) {
+    commOk = ok;
+    var el = document.getElementById('comm-status');
+    if (ok) {
+        el.textContent = 'COMM: OK';
+        el.className = 'comm-ok';
+    } else {
+        el.textContent = 'COMM: FAIL';
+        el.className = 'comm-fail';
+    }
+}
+
+function fetchTrends() {
+    fetch('/api/trends?range=' + currentRange)
+    .then(function(r) {
+        if (!r.ok) {
+            throw new Error('HTTP ' + r.status);
+        }
+        return r.json();
+    })
+    .then(function(result) {
+        setCommStatus(true);
+        hideError();
+
+        var data = result.data || [];
+        document.getElementById('trend-points').textContent = result.points || 0;
+        document.getElementById('last-trend-update').textContent = new Date().toLocaleTimeString();
+
+        if (data.length === 0) {
+            showError('No trend data available. Waiting for data accumulation...');
+            return;
+        }
+
+        var labels = data.map(function(d) {
+            var t = new Date(d.timestamp * 1000);
+            return ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2);
+        });
+
+        function vals(tag) { return data.map(function(d) { return d[tag] !== undefined ? d[tag] : null; }); }
+
+        // Update current value displays
+        var last = data[data.length - 1];
+        function cv(id, tag, dec) {
+            var v = last[tag];
+            document.getElementById(id).textContent = v !== undefined ? v.toFixed(dec) : '--';
+        }
+        cv('cv-do', 'WWTP01:AERATION:DO301.PV', 2);
+        cv('cv-do-sp', 'WWTP01:AERATION:DO301.SP', 2);
+        cv('cv-qin', 'WWTP01:INFLUENT:Q_IN.PV', 1);
+        cv('cv-qout', 'WWTP01:EFFLUENT:Q_OUT.PV', 1);
+        cv('cv-lt101', 'WWTP01:INFLUENT:LT101.PV', 2);
+        cv('cv-lt401', 'WWTP01:CLARIFIER:LT401.PV', 2);
+        cv('cv-cod', 'WWTP01:EFFLUENT:COD501.PV', 1);
+        cv('cv-tank', 'WWTP01:CHEMICAL:TANK501.LEVEL', 1);
+
+        // DO chart
+        charts.do.data.labels = labels;
+        charts.do.data.datasets[0].data = vals('WWTP01:AERATION:DO301.PV');
+        charts.do.data.datasets[1].data = vals('WWTP01:AERATION:DO301.SP');
+        charts.do.update();
+
+        // Flow chart
+        charts.flow.data.labels = labels;
+        charts.flow.data.datasets[0].data = vals('WWTP01:INFLUENT:Q_IN.PV');
+        charts.flow.data.datasets[1].data = vals('WWTP01:EFFLUENT:Q_OUT.PV');
+        charts.flow.update();
+
+        // Levels chart
+        charts.levels.data.labels = labels;
+        charts.levels.data.datasets[0].data = vals('WWTP01:INFLUENT:LT101.PV');
+        charts.levels.data.datasets[1].data = vals('WWTP01:CLARIFIER:LT401.PV');
+        charts.levels.update();
+
+        // Quality chart
+        charts.quality.data.labels = labels;
+        charts.quality.data.datasets[0].data = vals('WWTP01:EFFLUENT:COD501.PV');
+        charts.quality.data.datasets[1].data = vals('WWTP01:CHEMICAL:TANK501.LEVEL');
+        charts.quality.update();
+    })
+    .catch(function(err) {
+        console.error('Trend fetch error:', err);
+        setCommStatus(false);
+        showError('Communication error: ' + err.message);
+    });
+}
+
+function setRange(range, btn) {
+    currentRange = range;
+    document.querySelectorAll('.range-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    fetchTrends();
+}
+
+if (typeof Chart !== 'undefined') {
+    initCharts();
+    fetchTrends();
+    setInterval(fetchTrends, 10000);
+} else {
+    showError('Chart.js failed to load. Check network connectivity.');
+}
+</script>
+{% endblock %}

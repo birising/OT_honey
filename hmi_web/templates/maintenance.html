@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block title %}Maintenance{% endblock %}
+
+{% block extra_css %}
+<style>
+    .maint-section {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 15px;
+        margin-bottom: 12px;
+    }
+    .maint-section h3 {
+        margin: 0 0 12px 0;
+        font-size: 13px;
+        color: #2c3e50;
+        border-bottom: 1px solid #ecf0f1;
+        padding-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .mode-buttons { display: flex; gap: 8px; margin-bottom: 10px; }
+    .mode-btn {
+        padding: 8px 20px;
+        border: 2px solid #bdc3c7;
+        background: white;
+        color: #333;
+        cursor: pointer;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 13px;
+    }
+    .mode-btn.active-auto { border-color: #27ae60; background: #eafaf1; color: #27ae60; }
+    .mode-btn.active-manual { border-color: #f39c12; background: #fef9e7; color: #f39c12; }
+    .mode-btn.active-maintenance { border-color: #e74c3c; background: #fde8e8; color: #e74c3c; }
+    .mode-btn:hover { opacity: 0.8; }
+    .warning-banner {
+        padding: 8px 15px;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        display: none;
+    }
+    .warning-banner.visible { display: block; }
+    .warning-manual { background: #fef9e7; border: 1px solid #f39c12; color: #e67e22; }
+    .warning-maintenance { background: #fde8e8; border: 1px solid #e74c3c; color: #c0392b; }
+    .killswitch-status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px;
+        border-radius: 4px;
+    }
+    .ks-active { background: #fde8e8; border: 2px solid #e74c3c; }
+    .ks-inactive { background: #eafaf1; border: 1px solid #27ae60; }
+    .equip-table td { font-size: 13px; }
+    .status-pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: bold;
+    }
+    .pill-auto { background: #eafaf1; color: #27ae60; }
+    .pill-manual { background: #fef9e7; color: #f39c12; }
+    .pill-running { background: #eafaf1; color: #27ae60; }
+    .pill-stopped { background: #f5f5f5; color: #95a5a6; }
+    .pill-fault { background: #fde8e8; color: #e74c3c; }
+    .runtime-val { font-family: monospace; font-size: 12px; color: #7f8c8d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2 style="margin:0 0 8px 0; font-size:14px; color:#2c3e50; text-transform:uppercase; letter-spacing:0.5px;">Maintenance</h2>
+
+<!-- Mode Selection -->
+<div class="maint-section">
+    <h3>Global Operating Mode</h3>
+    <div class="mode-buttons">
+        <button class="mode-btn" id="btn-auto" onclick="setMode('AUTO')">AUTO</button>
+        <button class="mode-btn" id="btn-manual" onclick="setMode('MANUAL')">MANUAL</button>
+        <button class="mode-btn" id="btn-maintenance" onclick="setMode('MAINTENANCE')">MAINTENANCE</button>
+    </div>
+    <div class="warning-banner warning-manual" id="warn-manual">Manual control bypasses automatic logic. All equipment must be controlled individually.</div>
+    <div class="warning-banner warning-maintenance" id="warn-maintenance">All equipment stopped. Maintenance mode active - no automatic or manual control available.</div>
+</div>
+
+<!-- Kill Switch -->
+<div class="maint-section">
+    <h3>Emergency Stop (Kill Switch)</h3>
+    <div class="killswitch-status" id="ks-status">
+        <span style="font-size:20px;" id="ks-icon">&#10004;</span>
+        <span style="font-weight:bold; font-size:14px;" id="ks-text">System Normal - No emergency stop</span>
+        <button class="btn btn-success" onclick="resetKillSwitch()" style="margin-left:auto; display:none;" id="ks-reset-btn">Reset Kill Switch</button>
+    </div>
+</div>
+
+<!-- Equipment Status -->
+<div class="maint-section">
+    <h3>Equipment Status</h3>
+    <table class="equip-table" id="equip-table">
+        <tr>
+            <th>Equipment</th>
+            <th>Mode</th>
+            <th>Status</th>
+            <th>Fault</th>
+            <th>Runtime</th>
+        </tr>
+    </table>
+</div>
+
+<script>
+var equipDefs = [
+    {id: 'PMP101', name: 'Pump 101 (Influent)', autoTag: 'WWTP01:INFLUENT:PMP101.AUTO', fbTag: 'WWTP01:INFLUENT:PMP101.FB', faultTag: 'WWTP01:INFLUENT:PMP101.FAULT', runtimeTag: 'WWTP01:INFLUENT:PMP101.RUNTIME'},
+    {id: 'SCR101', name: 'Screen 101', autoTag: 'WWTP01:SCREENING:SCR101.AUTO', fbTag: 'WWTP01:SCREENING:SCR101.FB', faultTag: 'WWTP01:SCREENING:SCR101.FAULT', runtimeTag: null},
+    {id: 'PMP301', name: 'Pump 301 (Primary)', autoTag: 'WWTP01:PRIMARY:PMP301.AUTO', fbTag: 'WWTP01:PRIMARY:PMP301.FB', faultTag: 'WWTP01:PRIMARY:PMP301.FAULT', runtimeTag: 'WWTP01:PRIMARY:PMP301.RUNTIME'},
+    {id: 'BLW201', name: 'Blower 201', autoTag: 'WWTP01:AERATION:BLW201.AUTO', fbTag: 'WWTP01:AERATION:BLW201.FB', faultTag: 'WWTP01:AERATION:BLW201.FAULT', runtimeTag: 'WWTP01:AERATION:BLW201.RUNTIME'},
+    {id: 'PMP401', name: 'Pump 401 (RAS)', autoTag: 'WWTP01:CLARIFIER:PMP401.AUTO', fbTag: 'WWTP01:CLARIFIER:PMP401.FB', faultTag: null, runtimeTag: 'WWTP01:CLARIFIER:PMP401.RUNTIME'},
+    {id: 'PMP402', name: 'Pump 402 (WAS)', autoTag: 'WWTP01:CLARIFIER:PMP402.AUTO', fbTag: 'WWTP01:CLARIFIER:PMP402.FB', faultTag: null, runtimeTag: 'WWTP01:CLARIFIER:PMP402.RUNTIME'},
+    {id: 'PMP501', name: 'Pump 501 (Chemical)', autoTag: 'WWTP01:CHEMICAL:PMP501.AUTO', fbTag: 'WWTP01:CHEMICAL:PMP501.FB', faultTag: null, runtimeTag: 'WWTP01:CHEMICAL:PMP501.RUNTIME'}
+];
+
+function gv(snap, tag) {
+    return snap[tag] ? snap[tag].value : 0;
+}
+
+function updateMaintenance(snap) {
+    // Mode
+    var modeVal = Math.round(gv(snap, 'WWTP01:SYSTEM:GLOBAL_MODE.PV'));
+    var modeMap = {0: 'AUTO', 1: 'MANUAL', 2: 'MAINTENANCE'};
+    var mode = modeMap[modeVal] || 'AUTO';
+
+    document.getElementById('btn-auto').className = 'mode-btn' + (mode === 'AUTO' ? ' active-auto' : '');
+    document.getElementById('btn-manual').className = 'mode-btn' + (mode === 'MANUAL' ? ' active-manual' : '');
+    document.getElementById('btn-maintenance').className = 'mode-btn' + (mode === 'MAINTENANCE' ? ' active-maintenance' : '');
+
+    var warnManual = document.getElementById('warn-manual');
+    var warnMaint = document.getElementById('warn-maintenance');
+    warnManual.className = 'warning-banner warning-manual' + (mode === 'MANUAL' ? ' visible' : '');
+    warnMaint.className = 'warning-banner warning-maintenance' + (mode === 'MAINTENANCE' ? ' visible' : '');
+
+    // Kill switch
+    var ks = gv(snap, 'WWTP01:SYSTEM:KILL_SWITCH.PV');
+    var ksStatus = document.getElementById('ks-status');
+    var ksIcon = document.getElementById('ks-icon');
+    var ksText = document.getElementById('ks-text');
+    var ksResetBtn = document.getElementById('ks-reset-btn');
+
+    if (ks) {
+        ksStatus.className = 'killswitch-status ks-active';
+        ksIcon.innerHTML = '&#9888;';
+        ksText.textContent = 'EMERGENCY STOP ACTIVE - All equipment halted';
+        ksResetBtn.style.display = 'inline-block';
+    } else {
+        ksStatus.className = 'killswitch-status ks-inactive';
+        ksIcon.innerHTML = '&#10004;';
+        ksText.textContent = 'System Normal - No emergency stop';
+        ksResetBtn.style.display = 'none';
+    }
+
+    // Equipment table
+    var table = document.getElementById('equip-table');
+    var html = '<tr><th>Equipment</th><th>Mode</th><th>Status</th><th>Fault</th><th>Runtime</th></tr>';
+    for (var i = 0; i < equipDefs.length; i++) {
+        var eq = equipDefs[i];
+        var auto = eq.autoTag ? gv(snap, eq.autoTag) : 0;
+        var fb = eq.fbTag ? gv(snap, eq.fbTag) : 0;
+        var fault = eq.faultTag ? gv(snap, eq.faultTag) : 0;
+        var runtime = eq.runtimeTag ? gv(snap, eq.runtimeTag) : null;
+
+        html += '<tr>';
+        html += '<td><strong>' + eq.id + '</strong> - ' + eq.name + '</td>';
+        html += '<td><span class="status-pill ' + (auto ? 'pill-auto' : 'pill-manual') + '">' + (auto ? 'AUTO' : 'MANUAL') + '</span></td>';
+        html += '<td><span class="status-pill ' + (fb ? 'pill-running' : 'pill-stopped') + '">' + (fb ? 'RUNNING' : 'STOPPED') + '</span></td>';
+        html += '<td>';
+        if (fault) {
+            html += '<span class="status-pill pill-fault">FAULT</span>';
+        } else {
+            html += '<span style="color:#27ae60; font-size:12px;">OK</span>';
+        }
+        html += '</td>';
+        html += '<td>';
+        if (runtime !== null) {
+            html += '<span class="runtime-val">' + runtime.toFixed(1) + ' h</span>';
+        } else {
+            html += '<span class="runtime-val">--</span>';
+        }
+        html += '</td></tr>';
+    }
+    table.innerHTML = html;
+}
+
+function fetchMaintData() {
+    fetch('/api/snapshot')
+    .then(function(r) { return r.ok ? r.json() : {}; })
+    .then(function(snap) {
+        updateMaintenance(snap);
+    })
+    .catch(function(err) {
+        console.error('Maintenance fetch error:', err);
+    });
+}
+
+function setMode(mode) {
+    if (mode === 'MAINTENANCE') {
+        if (!confirm('Switch to MAINTENANCE mode?\nAll equipment will be stopped.')) return;
+    }
+    fetch('/api/mode', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mode: mode})
+    }).then(function() { fetchMaintData(); });
+}
+
+function resetKillSwitch() {
+    fetch('/api/killswitch', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({activate: false})
+    }).then(function() {
+        return fetch('/api/mode', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mode: 'AUTO'})
+        });
+    }).then(function() { fetchMaintData(); });
+}
+
+fetchMaintData();
+setInterval(fetchMaintData, 5000);
+</script>
+{% endblock %}
