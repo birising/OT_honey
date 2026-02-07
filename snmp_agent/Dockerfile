@@ -8,8 +8,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 RUN useradd -m -u 1000 appuser && \
-    mkdir -p /app/logs && \
-    chown -R appuser:appuser /app
+    mkdir -p /data/logs && \
+    chown -R appuser:appuser /app /data/logs
 
 USER appuser
 

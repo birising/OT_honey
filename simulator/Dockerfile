@@ -11,8 +11,8 @@ COPY . .
 
 # Create non-root user and logs directory
 RUN useradd -m -u 1000 appuser && \
-    mkdir -p /app/logs && \
-    chown -R appuser:appuser /app
+    mkdir -p /data/logs && \
+    chown -R appuser:appuser /app /data/logs
 
 USER appuser
 

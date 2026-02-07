@@ -53,7 +53,7 @@ def log_snmp_query(oid, src_ip, result='success'):
         'result': result,
     }
     
-    log_dir = "/tmp/logs"
+    log_dir = "/data/logs"
     os.makedirs(log_dir, exist_ok=True)
     log_file = f"{log_dir}/snmp_{datetime.utcnow().strftime('%Y%m%d')}.jsonl"
     try:

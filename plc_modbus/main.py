@@ -137,7 +137,7 @@ def log_modbus_operation(fc, address, count, values=None, src_ip='unknown', resu
         'result': result,
     }
 
-    log_dir = "/tmp/logs"
+    log_dir = "/data/logs"
     os.makedirs(log_dir, exist_ok=True)
     log_file = f"{log_dir}/modbus_{datetime.utcnow().strftime('%Y%m%d')}.jsonl"
     try:

@@ -8,8 +8,11 @@ services:
       - RANDOM_SEED=${RANDOM_SEED:-42}
       - DETERMINISTIC=${DETERMINISTIC:-true}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
     volumes:
       - ./simulator:/app:ro
+      - ./logs/simulator:/data/logs
     ports:
       - "8080:8080"
     networks:
@@ -41,6 +44,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./plc_modbus:/app:ro
+      - ./logs/modbus:/data/logs
     ports:
       - "502:502"
     networks:
@@ -68,6 +72,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./snmp_agent:/app:ro
+      - ./logs/snmp:/data/logs
     ports:
       - "161:161/udp"
     networks:
@@ -92,8 +97,11 @@ services:
       - SIMULATOR_URL=http://simulator:8080
       - FLASK_ENV=production
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
     volumes:
       - ./hmi_web:/app:ro
+      - ./logs/hmi:/data/logs
     ports:
       - "80:80"
     networks:

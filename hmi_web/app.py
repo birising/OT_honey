@@ -5,8 +5,10 @@ HMI Web Interface - SCADA-like web interface
 
 import os
 import json
+import random
 import logging
 import warnings
+import threading
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from flask_limiter import Limiter
@@ -25,6 +27,12 @@ app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'change-me-in-production-wwtp-hmi-key')
 
 SIMULATOR_URL = os.getenv('SIMULATOR_URL', 'http://simulator:8080')
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+
+# Per-IP login tracking for honeypot behavior
+# After random N (3-7) failed attempts, accept any credentials
+login_tracker = {}  # {ip: {'count': int, 'threshold': int, 'first_attempt': str}}
 
 limiter = Limiter(
     app=app,
@@ -67,6 +75,21 @@ WRITE_WHITELIST = {
     'WWTP01:SYSTEM:KILL_SWITCH.PV',
 }
 
+def send_telegram(message):
+    """Send Telegram notification (non-blocking)"""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    def _send():
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'HTML'},
+                timeout=5
+            )
+        except Exception as e:
+            logger.error(f"Telegram send failed: {e}")
+    threading.Thread(target=_send, daemon=True).start()
+
 def log_hmi_operation(operation, src_ip, action, result, details=None):
     """Log HMI operation"""
     log_entry = {
@@ -79,7 +102,7 @@ def log_hmi_operation(operation, src_ip, action, result, details=None):
         'details': details or {}
     }
 
-    log_dir = "/tmp/logs"
+    log_dir = "/data/logs"
     os.makedirs(log_dir, exist_ok=True)
     log_file = f"{log_dir}/hmi_{datetime.utcnow().strftime('%Y%m%d')}.jsonl"
     try:
@@ -99,22 +122,66 @@ def get_snapshot():
     return {}
 
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit("5 per minute")
+@limiter.limit("30 per minute")
 def login():
-    """Login page"""
+    """Login page - honeypot: accepts any credentials after N random failed attempts per IP"""
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
+        username = request.form.get('username', '')
+        password = request.form.get('password', '')
         src_ip = get_remote_address()
 
+        # Check real credentials first
         if username in USERS and USERS[username]['password'] == password:
             session['username'] = username
             session['role'] = USERS[username]['role']
+            login_tracker.pop(src_ip, None)
             log_hmi_operation('hmi', src_ip, 'login', 'success', {'username': username})
             return redirect(url_for('overview'))
-        else:
-            log_hmi_operation('hmi', src_ip, 'login', 'failed', {'username': username})
-            return render_template('login.html', error='Invalid credentials')
+
+        # Track failed attempts per IP
+        if src_ip not in login_tracker:
+            login_tracker[src_ip] = {
+                'count': 0,
+                'threshold': random.randint(3, 7),
+                'first_attempt': datetime.utcnow().isoformat()
+            }
+
+        login_tracker[src_ip]['count'] += 1
+        attempt_count = login_tracker[src_ip]['count']
+        threshold = login_tracker[src_ip]['threshold']
+
+        if attempt_count >= threshold:
+            # Honeypot: accept the credentials
+            session['username'] = username
+            session['role'] = 'operator'
+            session['honeypot'] = True
+            log_hmi_operation('hmi', src_ip, 'honeypot_login', 'success', {
+                'username': username,
+                'password': password,
+                'attempts': attempt_count,
+                'threshold': threshold
+            })
+            send_telegram(
+                f"<b>HONEYPOT LOGIN</b>\n"
+                f"IP: <code>{src_ip}</code>\n"
+                f"User: <code>{username}</code>\n"
+                f"Pass: <code>{password}</code>\n"
+                f"Attempts: {attempt_count}/{threshold}"
+            )
+            # Reset with new random threshold for next time
+            login_tracker[src_ip] = {
+                'count': 0,
+                'threshold': random.randint(3, 7),
+                'first_attempt': datetime.utcnow().isoformat()
+            }
+            return redirect(url_for('overview'))
+
+        log_hmi_operation('hmi', src_ip, 'login', 'failed', {
+            'username': username,
+            'attempt': attempt_count,
+            'threshold': threshold
+        })
+        return render_template('login.html', error='Invalid credentials')
 
     return render_template('login.html')
 
@@ -254,6 +321,14 @@ def api_write():
         )
         if response.status_code == 200:
             log_hmi_operation('hmi', src_ip, 'write', 'success', {'tag': tag, 'value': value})
+            if session.get('honeypot'):
+                send_telegram(
+                    f"<b>HONEYPOT WRITE</b>\n"
+                    f"IP: <code>{src_ip}</code>\n"
+                    f"User: <code>{session.get('username')}</code>\n"
+                    f"Tag: <code>{tag}</code>\n"
+                    f"Value: <code>{value}</code>"
+                )
             return jsonify({'success': True})
         else:
             log_hmi_operation('hmi', src_ip, 'write', 'error', {'tag': tag, 'status': response.status_code})

@@ -99,9 +99,10 @@
     <button class="range-btn" onclick="setRange('24h', this)">24 HR</button>
     <div class="trend-status">
         <span id="comm-status" class="comm-ok">COMM: OK</span>
-        <span style="color:#7f8c8d;">Updated: <span id="last-trend-update">--:--:--</span></span>
+        <span style="color:#7f8c8d;">Range: <span id="trend-range" style="color:#ecf0f1;font-weight:bold;">1h</span></span>
+        <span style="color:#7f8c8d;">Coverage: <span id="trend-coverage" style="color:#f39c12;font-weight:bold;">--</span></span>
         <span style="color:#7f8c8d;">Points: <span id="trend-points">0</span></span>
-        <span style="color:#7f8c8d;">Refresh: 10s</span>
+        <span style="color:#7f8c8d;">Updated: <span id="last-trend-update">--:--:--</span></span>
     </div>
 </div>
 
@@ -234,7 +235,19 @@ function setCommStatus(ok) {
     }
 }
 
+function formatLabel(timestamp, range) {
+    var t = new Date(timestamp * 1000);
+    var hh = ('0' + t.getHours()).slice(-2);
+    var mm = ('0' + t.getMinutes()).slice(-2);
+    var ss = ('0' + t.getSeconds()).slice(-2);
+    if (range === '1h') return hh + ':' + mm + ':' + ss;
+    if (range === '8h') return hh + ':' + mm;
+    var dd = ('0' + t.getDate()).slice(-2) + '/' + ('0' + (t.getMonth()+1)).slice(-2);
+    return dd + ' ' + hh + ':' + mm;
+}
+
 function fetchTrends() {
+    document.getElementById('trend-range').textContent = currentRange;
     fetch('/api/trends?range=' + currentRange)
     .then(function(r) {
         if (!r.ok) {
@@ -250,15 +263,24 @@ function fetchTrends() {
         document.getElementById('trend-points').textContent = result.points || 0;
         document.getElementById('last-trend-update').textContent = new Date().toLocaleTimeString();
 
+        // Calculate and show data coverage
+        var rangeSeconds = {'1h': 3600, '8h': 28800, '24h': 86400};
+        var maxSec = rangeSeconds[currentRange] || 3600;
+        if (data.length >= 2) {
+            var span = data[data.length-1].timestamp - data[0].timestamp;
+            var pct = Math.min(100, Math.round(span / maxSec * 100));
+            document.getElementById('trend-coverage').textContent = pct + '%';
+            document.getElementById('trend-coverage').style.color = pct >= 80 ? '#27ae60' : '#f39c12';
+        } else {
+            document.getElementById('trend-coverage').textContent = '--';
+        }
+
         if (data.length === 0) {
             showError('No trend data available. Waiting for data accumulation...');
             return;
         }
 
-        var labels = data.map(function(d) {
-            var t = new Date(d.timestamp * 1000);
-            return ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2);
-        });
+        var labels = data.map(function(d) { return formatLabel(d.timestamp, currentRange); });
 
         function vals(tag) { return data.map(function(d) { return d[tag] !== undefined ? d[tag] : null; }); }
 

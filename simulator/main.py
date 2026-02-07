@@ -9,10 +9,12 @@ import json
 import time
 import uuid
 import logging
+import threading
 from collections import deque
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import requests as http_requests
 import numpy as np
 
 # Configure logging
@@ -24,6 +26,24 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
+
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+
+def send_telegram(message):
+    """Send Telegram notification (non-blocking)"""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    def _send():
+        try:
+            http_requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'HTML'},
+                timeout=5
+            )
+        except Exception as e:
+            logger.error(f"Telegram send failed: {e}")
+    threading.Thread(target=_send, daemon=True).start()
 
 # Deterministic mode
 DETERMINISTIC = os.getenv('DETERMINISTIC', 'true').lower() == 'true'
@@ -107,7 +127,7 @@ def log_operation(operation, src_ip, action, result, details=None):
         'details': details or {}
     }
 
-    log_dir = "/tmp/logs"
+    log_dir = "/data/logs"
     os.makedirs(log_dir, exist_ok=True)
     log_file = f"{log_dir}/{operation}_{datetime.utcnow().strftime('%Y%m%d')}.jsonl"
     try:
@@ -172,6 +192,12 @@ def write_tag():
     try:
         result = process.write_tag(tag, value)
         log_operation('api', src_ip, 'write', 'success', {'tag': tag, 'value': value})
+        send_telegram(
+            f"<b>TAG WRITE</b>\n"
+            f"IP: <code>{src_ip}</code>\n"
+            f"Tag: <code>{tag}</code>\n"
+            f"Value: <code>{value}</code>"
+        )
         return jsonify({'success': True, 'tag': tag, 'value': result})
     except Exception as e:
         log_operation('api', src_ip, 'write', 'error', {'tag': tag, 'error': str(e)})
@@ -263,6 +289,11 @@ def start_scenario():
     try:
         scenarios.start_scenario(scenario_name)
         log_operation('api', src_ip, 'scenario_start', 'success', {'scenario': scenario_name})
+        send_telegram(
+            f"<b>SCENARIO STARTED</b>\n"
+            f"IP: <code>{src_ip}</code>\n"
+            f"Scenario: <code>{scenario_name}</code>"
+        )
         return jsonify({'success': True, 'scenario': scenario_name})
     except Exception as e:
         log_operation('api', src_ip, 'scenario_start', 'error', {'scenario': scenario_name, 'error': str(e)})

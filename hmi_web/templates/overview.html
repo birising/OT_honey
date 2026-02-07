@@ -484,6 +484,14 @@ function showFaceplate(id) {
         html += fpRow('Tank Level', gv('WWTP01:AERATION:LT201.PV').toFixed(2) + ' m');
         html += fpRow('Runtime', gv('WWTP01:AERATION:BLW201.RUNTIME').toFixed(1) + ' h');
         html += fpRow('Fault', bFault ? 'YES' : 'No', bFault ? '#e74c3c' : '#27ae60');
+        html += '<div class="fp-row" style="margin-top:8px;border-top:1px solid #ecf0f1;padding-top:8px;">';
+        html += '<span class="fp-label">DO Setpoint</span>';
+        html += '<span><input type="number" id="sp-do" value="' + gv('WWTP01:AERATION:DO301.SP').toFixed(2) + '" step="0.1" min="0" max="8" style="width:70px;font-size:12px;"> <button class="btn" style="padding:4px 8px;font-size:11px;" onclick="writeSP(\'WWTP01:AERATION:DO301.SP\',\'sp-do\')">Set</button></span>';
+        html += '</div>';
+        html += '<div class="fp-row">';
+        html += '<span class="fp-label">Blower SP %</span>';
+        html += '<span><input type="number" id="sp-blw" value="' + gv('WWTP01:AERATION:BLW201.SP').toFixed(1) + '" step="1" min="0" max="100" style="width:70px;font-size:12px;"> <button class="btn" style="padding:4px 8px;font-size:11px;" onclick="writeSP(\'WWTP01:AERATION:BLW201.SP\',\'sp-blw\')">Set</button></span>';
+        html += '</div>';
         controls = [
             {label:'Start', tag:'WWTP01:AERATION:BLW201.CMD', value:1, cls:'btn-success'},
             {label:'Stop', tag:'WWTP01:AERATION:BLW201.CMD', value:0, cls:'btn-danger'},
@@ -504,12 +512,19 @@ function showFaceplate(id) {
     } else if (id === 'chemical') {
         html = fpHeader('PMP501 - Chemical Dosing');
         html += fpRow('Status', gv('WWTP01:CHEMICAL:PMP501.FB') ? 'RUNNING' : 'STOPPED', gv('WWTP01:CHEMICAL:PMP501.FB') ? '#27ae60' : '#95a5a6');
+        html += fpRow('Mode', gv('WWTP01:CHEMICAL:PMP501.AUTO') ? 'AUTO' : 'MANUAL');
         html += fpRow('FeCl3 Rate', gv('WWTP01:CHEMICAL:DOSE_FECL3.PV').toFixed(1) + ' L/h (SP: ' + gv('WWTP01:CHEMICAL:DOSE_FECL3.SP').toFixed(1) + ')');
         html += fpRow('Tank Level', gv('WWTP01:CHEMICAL:TANK501.LEVEL').toFixed(0) + '%');
         html += fpRow('Valve VLV501', gv('WWTP01:CHEMICAL:VLV501.POS').toFixed(0) + '%');
+        html += fpRow('Runtime', gv('WWTP01:CHEMICAL:PMP501.RUNTIME').toFixed(1) + ' h');
+        html += '<div class="fp-row" style="margin-top:8px;border-top:1px solid #ecf0f1;padding-top:8px;">';
+        html += '<span class="fp-label">Dose SP (L/h)</span>';
+        html += '<span><input type="number" id="sp-dose" value="' + gv('WWTP01:CHEMICAL:DOSE_FECL3.SP').toFixed(1) + '" step="0.1" min="0" max="20" style="width:70px;font-size:12px;"> <button class="btn" style="padding:4px 8px;font-size:11px;" onclick="writeSP(\'WWTP01:CHEMICAL:DOSE_FECL3.SP\',\'sp-dose\')">Set</button></span>';
+        html += '</div>';
         controls = [
             {label:'Start', tag:'WWTP01:CHEMICAL:PMP501.CMD', value:1, cls:'btn-success'},
-            {label:'Stop', tag:'WWTP01:CHEMICAL:PMP501.CMD', value:0, cls:'btn-danger'}
+            {label:'Stop', tag:'WWTP01:CHEMICAL:PMP501.CMD', value:0, cls:'btn-danger'},
+            {label: gv('WWTP01:CHEMICAL:PMP501.AUTO') ? 'Set Manual' : 'Set Auto', tag:'WWTP01:CHEMICAL:PMP501.AUTO', value: gv('WWTP01:CHEMICAL:PMP501.AUTO') ? 0 : 1, cls:'btn-warning'}
         ];
     } else if (id === 'effluent') {
         html = fpHeader('Effluent');
@@ -544,17 +559,31 @@ function closeFaceplate() {
     document.getElementById('faceplate-overlay').style.display = 'none';
 }
 
-function writeTag(tag, value) {
+function writeTag(tag, value, keepOpen) {
     fetch('/api/write', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({tag: tag, value: value})
     }).then(function(resp) {
+        if (!resp.ok) throw new Error('Write failed: HTTP ' + resp.status);
         return resp.json();
-    }).then(function() {
-        closeFaceplate();
+    }).then(function(data) {
+        if (data.error) {
+            alert('Write error: ' + data.error);
+            return;
+        }
+        if (!keepOpen) closeFaceplate();
         fetchSnapshot();
+    }).catch(function(err) {
+        alert('Write error: ' + err.message);
     });
+}
+
+function writeSP(tag, inputId) {
+    var el = document.getElementById(inputId);
+    var val = parseFloat(el.value);
+    if (isNaN(val)) { alert('Invalid value'); return; }
+    writeTag(tag, val, true);
 }
 
 // Initial fetch and periodic update (no page reload)
