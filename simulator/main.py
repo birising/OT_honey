@@ -338,7 +338,7 @@ def root():
     return jsonify({
         'service': 'WWTP Control System API',
         'facility': 'WWTP Belokluky',
-        'operator': 'Vodohospodarska spolecnost Vychodni Cechy, a.s.',
+        'operator': 'Vodohospodarska spolecnost Belokluky',
         'capacity': '4.5k EO',
         'version': '3.0.0',
         'endpoints': {

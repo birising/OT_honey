@@ -25,7 +25,7 @@ START_TIME = time.time()
 # Fiktivní čistička odpadních vod
 WWTP_NAME = "ČOV Belokluky"
 WWTP_LOCATION = "Belokluky"
-WWTP_OPERATOR = "Vodohospodářská společnost Východní Čechy, a.s."
+WWTP_OPERATOR = "Vodohospodarska spolecnost Belokluky"
 WWTP_ADDRESS = "Čistírna odpadních vod, Belokluky"
 WWTP_CONTACT = "provoz@vsch.cz"
 WWTP_SYSTEM_NAME = "BEL-CZ-01"
