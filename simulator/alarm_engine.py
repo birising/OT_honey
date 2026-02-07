@@ -19,7 +19,7 @@ class AlarmSeverity(Enum):
 class AlarmEngine:
     """Alarm engine with delay and hysteresis"""
 
-    def __init__(self, tag_generator, deterministic=True, seed=42):
+    def __init__(self, tag_generator, deterministic=True, seed=42, on_alarm_callback=None):
         self.tag_gen = tag_generator
         self.deterministic = deterministic
         self.seed = seed
@@ -30,6 +30,7 @@ class AlarmEngine:
 
         self.active_alarms = {}
         self.alarm_history = []
+        self.on_alarm_callback = on_alarm_callback  # Callback for alarm notifications
 
         # Alarm definitions
         self.alarm_defs = {
@@ -233,8 +234,12 @@ class AlarmEngine:
                         state['active'] = False
                         state['triggered_time'] = None
                         if alarm_id in self.active_alarms:
+                            cleared_alarm = self.active_alarms[alarm_id].copy()
                             del self.active_alarms[alarm_id]
-                        logger.info(f"Alarm cleared: {alarm_def['text']}")
+                            logger.info(f"Alarm cleared: {alarm_def['text']}")
+                            # Call notification callback if set
+                            if self.on_alarm_callback:
+                                self.on_alarm_callback('cleared', cleared_alarm)
                 else:
                     if state['triggered_time'] is not None and not state['active']:
                         state['triggered_time'] = None

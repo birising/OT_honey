@@ -341,12 +341,27 @@ RANDOM_SEED=42
 
 ## Logging
 
-All operations are logged as structured JSON in `/app/logs/` inside each container:
+All operations are logged in two formats:
+
+### Structured JSON Logs
+
+Structured JSON logs are written to `/data/logs/` (mapped to `./logs/` on host):
 
 - `api_YYYYMMDD.jsonl` - Simulator API operations
 - `modbus_YYYYMMDD.jsonl` - Modbus read/write requests
 - `snmp_YYYYMMDD.jsonl` - SNMP queries
 - `hmi_YYYYMMDD.jsonl` - HMI web operations
+
+### Application Logs
+
+Application logs with standard Python logging format are written to:
+
+- `simulator/simulator.log` - Simulator application logs (rotates daily)
+- `hmi/hmi.log` - HMI web application logs (rotates daily)
+- `modbus/modbus.log` - Modbus server logs (rotates daily)
+- `snmp/snmp.log` - SNMP agent logs (rotates daily)
+
+Logs are automatically rotated daily at midnight. Old logs are kept for 30 days with suffix `.YYYYMMDD`.
 
 ### Log Format
 
@@ -363,6 +378,94 @@ All operations are logged as structured JSON in `/app/logs/` inside each contain
     "value": true
   }
 }
+```
+
+## Telegram Notifications
+
+The honeypot can send real-time notifications to Telegram for important events. This is useful for monitoring honeypot activity and security events.
+
+### Configuration
+
+1. **Create a Telegram Bot:**
+   - Open Telegram and search for [@BotFather](https://t.me/botfather)
+   - Send `/newbot` and follow instructions to create a bot
+   - Copy the bot token (e.g., `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
+
+2. **Get Your Chat ID:**
+   - Start a conversation with your bot
+   - Send a message to your bot
+   - Visit: `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
+   - Find your chat ID in the response (e.g., `123456789`)
+
+3. **Configure Environment Variables:**
+   
+   Create or edit `.env` file in the project root:
+   ```bash
+   TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+   TELEGRAM_CHAT_ID=123456789
+   ```
+
+4. **Restart Services:**
+   ```bash
+   docker-compose restart simulator hmi_web
+   ```
+
+### Notification Events
+
+The following events trigger Telegram notifications:
+
+| Event | Description | Emoji |
+|-------|-------------|-------|
+| **Alarm Activated** | When any alarm is triggered (HH/LL levels, DO, faults, etc.) | ⚠️🔴🚨 |
+| **Alarm Cleared** | When an alarm condition clears | ✅ |
+| **Emergency Stop** | Kill switch activated/deactivated | 🚨✅ |
+| **Honeypot Login** | Successful honeypot authentication (after failed attempts) | 🔐 |
+| **Honeypot Write** | Tag write operation from honeypot account | ✍️ |
+| **Tag Write** | Any tag write via API | 📝 |
+| **Scenario Start** | Test scenario activation | 🎬 |
+
+### Notification Format
+
+Notifications are sent in HTML format with structured information:
+
+**Example - Alarm Activated:**
+```
+🚨 ALARM ACTIVATED
+Alarm: HH Wet Well Level
+Tag: WWTP01:INFLUENT:LT101.PV
+Value: 2.65
+Severity: HIGH
+Time: 2024-02-07 14:30:45
+```
+
+**Example - Honeypot Login:**
+```
+🔐 HONEYPOT LOGIN
+IP: 192.168.1.100
+User: admin
+Pass: password123
+Attempts: 5/5
+```
+
+### Troubleshooting
+
+- **No notifications received:**
+  - Check that `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set in `.env`
+  - Verify bot token is correct
+  - Ensure you've sent at least one message to the bot
+  - Check container logs: `docker-compose logs simulator | grep -i telegram`
+
+- **Notifications not working:**
+  - Check network connectivity (containers need internet access)
+  - Verify chat ID is correct (must be numeric)
+  - Check logs for errors: `docker-compose logs simulator hmi_web`
+
+### Disabling Notifications
+
+To disable Telegram notifications, simply remove or comment out the environment variables in `.env`:
+```bash
+# TELEGRAM_BOT_TOKEN=
+# TELEGRAM_CHAT_ID=
 ```
 
 ## Security Notes

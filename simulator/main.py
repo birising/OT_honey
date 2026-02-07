@@ -10,6 +10,7 @@ import time
 import uuid
 import logging
 import threading
+from logging.handlers import TimedRotatingFileHandler
 from collections import deque
 from datetime import datetime
 from flask import Flask, request, jsonify
@@ -17,12 +18,42 @@ from flask_cors import CORS
 import requests as http_requests
 import numpy as np
 
-# Configure logging
-logging.basicConfig(
-    level=os.getenv('LOG_LEVEL', 'INFO'),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure logging to both console and file
+log_level = os.getenv('LOG_LEVEL', 'INFO')
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+# Create logger
 logger = logging.getLogger(__name__)
+logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+
+# Console handler (for Docker logs)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+console_handler.setFormatter(logging.Formatter(log_format))
+
+# File handler (for persistent logs outside Docker) - rotates daily at midnight
+log_dir = "/data/logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = f"{log_dir}/simulator.log"
+file_handler = TimedRotatingFileHandler(
+    log_file,
+    when='midnight',
+    interval=1,
+    backupCount=30,  # Keep 30 days of logs
+    encoding='utf-8'
+)
+file_handler.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+file_handler.setFormatter(logging.Formatter(log_format))
+file_handler.suffix = '%Y%m%d'  # Format: simulator.log.20260207
+
+# Add handlers
+logger.addHandler(console_handler)
+logger.addHandler(file_handler)
+
+# Prevent duplicate logs from root logger
+logging.getLogger().setLevel(logging.WARNING)
+
+logger.info(f"Logging initialized - file: {log_file}, level: {log_level}")
 
 app = Flask(__name__)
 CORS(app)
@@ -33,14 +64,19 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
 def send_telegram(message):
     """Send Telegram notification (non-blocking)"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logger.debug("Telegram not configured - skipping notification")
         return
     def _send():
         try:
-            http_requests.post(
+            response = http_requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                 json={'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'HTML'},
                 timeout=5
             )
+            if response.status_code == 200:
+                logger.debug("Telegram notification sent successfully")
+            else:
+                logger.warning(f"Telegram send returned status {response.status_code}: {response.text}")
         except Exception as e:
             logger.error(f"Telegram send failed: {e}")
     threading.Thread(target=_send, daemon=True).start()
@@ -61,7 +97,33 @@ from scenario_manager import ScenarioManager
 # Initialize components
 tag_gen = TagGenerator(deterministic=DETERMINISTIC, seed=RANDOM_SEED)
 process = ProcessModel(tag_gen, deterministic=DETERMINISTIC, seed=RANDOM_SEED)
-alarms = AlarmEngine(tag_gen, deterministic=DETERMINISTIC, seed=RANDOM_SEED)
+
+# Alarm callback for Telegram notifications
+def alarm_notification_callback(event_type, alarm):
+    """Callback for alarm events - sends Telegram notification"""
+    if event_type == 'activated':
+        severity_emoji = {
+            'MEDIUM': '⚠️',
+            'HIGH': '🔴',
+            'CRITICAL': '🚨'
+        }.get(alarm.get('severity_text', ''), '⚠️')
+        send_telegram(
+            f"<b>{severity_emoji} ALARM ACTIVATED</b>\n"
+            f"Alarm: <code>{alarm.get('text', 'Unknown')}</code>\n"
+            f"Tag: <code>{alarm.get('tag', 'Unknown')}</code>\n"
+            f"Value: <code>{alarm.get('value', 'N/A')}</code>\n"
+            f"Severity: <code>{alarm.get('severity_text', 'Unknown')}</code>\n"
+            f"Time: <code>{alarm.get('timestamp', 'N/A')}</code>"
+        )
+    elif event_type == 'cleared':
+        send_telegram(
+            f"<b>✅ ALARM CLEARED</b>\n"
+            f"Alarm: <code>{alarm.get('text', 'Unknown')}</code>\n"
+            f"Tag: <code>{alarm.get('tag', 'Unknown')}</code>\n"
+            f"Time: <code>{alarm.get('timestamp', 'N/A')}</code>"
+        )
+
+alarms = AlarmEngine(tag_gen, deterministic=DETERMINISTIC, seed=RANDOM_SEED, on_alarm_callback=alarm_notification_callback)
 scenarios = ScenarioManager(process, alarms, deterministic=DETERMINISTIC, seed=RANDOM_SEED)
 
 # Trend history buffer (24h at 1s intervals)
@@ -274,6 +336,21 @@ def kill_switch():
     process.set_kill_switch(activate)
 
     log_operation('api', src_ip, 'killswitch', 'success', {'activate': activate})
+    
+    # Send Telegram notification
+    if activate:
+        send_telegram(
+            f"<b>🚨 EMERGENCY STOP ACTIVATED</b>\n"
+            f"IP: <code>{src_ip}</code>\n"
+            f"All equipment stopped immediately"
+        )
+    else:
+        send_telegram(
+            f"<b>✅ EMERGENCY STOP DEACTIVATED</b>\n"
+            f"IP: <code>{src_ip}</code>\n"
+            f"System can resume operation"
+        )
+    
     return jsonify({'success': True, 'kill_switch': activate})
 
 @app.route('/api/scenario/start', methods=['POST'])
@@ -391,6 +468,7 @@ def update_loop():
 
 if __name__ == '__main__':
     import threading
+    logger.info("Starting WWTP Simulator on port 8080")
     update_thread = threading.Thread(target=update_loop, daemon=True)
     update_thread.start()
 

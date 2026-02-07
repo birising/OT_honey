@@ -8,6 +8,7 @@ import json
 import time
 import logging
 import requests
+from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
 from pymodbus.server import StartTcpServer
 from pymodbus.device import ModbusDeviceIdentification
@@ -15,11 +16,42 @@ from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
 from pymodbus.datastore import ModbusSequentialDataBlock
 from pymodbus.transaction import ModbusRtuFramer, ModbusSocketFramer
 
-logging.basicConfig(
-    level=os.getenv('LOG_LEVEL', 'INFO'),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure logging to both console and file
+log_level = os.getenv('LOG_LEVEL', 'INFO')
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+# Create logger
 logger = logging.getLogger(__name__)
+logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+
+# Console handler (for Docker logs)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+console_handler.setFormatter(logging.Formatter(log_format))
+
+# File handler (for persistent logs outside Docker) - rotates daily at midnight
+log_dir = "/data/logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = f"{log_dir}/modbus.log"
+file_handler = TimedRotatingFileHandler(
+    log_file,
+    when='midnight',
+    interval=1,
+    backupCount=30,  # Keep 30 days of logs
+    encoding='utf-8'
+)
+file_handler.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+file_handler.setFormatter(logging.Formatter(log_format))
+file_handler.suffix = '%Y%m%d'  # Format: modbus.log.20260207
+
+# Add handlers
+logger.addHandler(console_handler)
+logger.addHandler(file_handler)
+
+# Prevent duplicate logs from root logger
+logging.getLogger().setLevel(logging.WARNING)
+
+logger.info(f"Logging initialized - file: {log_file}, level: {log_level}")
 
 SIMULATOR_URL = os.getenv('SIMULATOR_URL', 'http://simulator:8080')
 
@@ -223,6 +255,8 @@ class CustomDataBlock(ModbusSequentialDataBlock):
 def run_modbus_server():
     """Run Modbus TCP server"""
     import threading
+    
+    logger.info("Starting Modbus TCP server on port 502")
 
     # Initialize data blocks
     coils = CustomDataBlock(0, [0] * 10000)

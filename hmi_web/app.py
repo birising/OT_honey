@@ -9,6 +9,7 @@ import random
 import logging
 import warnings
 import threading
+from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from flask_limiter import Limiter
@@ -17,11 +18,42 @@ import requests
 
 warnings.filterwarnings('ignore', category=UserWarning, module='flask_limiter')
 
-logging.basicConfig(
-    level=os.getenv('LOG_LEVEL', 'INFO'),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure logging to both console and file
+log_level = os.getenv('LOG_LEVEL', 'INFO')
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+# Create logger
 logger = logging.getLogger(__name__)
+logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+
+# Console handler (for Docker logs)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+console_handler.setFormatter(logging.Formatter(log_format))
+
+# File handler (for persistent logs outside Docker) - rotates daily at midnight
+log_dir = "/data/logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = f"{log_dir}/hmi.log"
+file_handler = TimedRotatingFileHandler(
+    log_file,
+    when='midnight',
+    interval=1,
+    backupCount=30,  # Keep 30 days of logs
+    encoding='utf-8'
+)
+file_handler.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+file_handler.setFormatter(logging.Formatter(log_format))
+file_handler.suffix = '%Y%m%d'  # Format: hmi.log.20260207
+
+# Add handlers
+logger.addHandler(console_handler)
+logger.addHandler(file_handler)
+
+# Prevent duplicate logs from root logger
+logging.getLogger().setLevel(logging.WARNING)
+
+logger.info(f"Logging initialized - file: {log_file}, level: {log_level}")
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'change-me-in-production-wwtp-hmi-key')
@@ -78,14 +110,19 @@ WRITE_WHITELIST = {
 def send_telegram(message):
     """Send Telegram notification (non-blocking)"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logger.debug("Telegram not configured - skipping notification")
         return
     def _send():
         try:
-            requests.post(
+            response = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                 json={'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'HTML'},
                 timeout=5
             )
+            if response.status_code == 200:
+                logger.debug("Telegram notification sent successfully")
+            else:
+                logger.warning(f"Telegram send returned status {response.status_code}: {response.text}")
         except Exception as e:
             logger.error(f"Telegram send failed: {e}")
     threading.Thread(target=_send, daemon=True).start()
@@ -454,4 +491,5 @@ def api_killswitch():
 
 if __name__ == '__main__':
     warnings.filterwarnings('ignore', message='.*development server.*')
+    logger.info("Starting HMI Web Interface on port 80")
     app.run(host='0.0.0.0', port=80, debug=False)
