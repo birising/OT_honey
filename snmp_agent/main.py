@@ -23,12 +23,12 @@ SNMP_PORT = int(os.getenv('SNMP_PORT', '161'))
 START_TIME = time.time()
 
 # Fiktivní čistička odpadních vod
-WWTP_NAME = "ČOV Nové Město nad Metují"
-WWTP_LOCATION = "Nové Město nad Metují, okres Náchod"
+WWTP_NAME = "ČOV Belokluky"
+WWTP_LOCATION = "Belokluky"
 WWTP_OPERATOR = "Vodohospodářská společnost Východní Čechy, a.s."
-WWTP_ADDRESS = "Čistírna odpadních vod, 549 01 Nové Město nad Metují"
+WWTP_ADDRESS = "Čistírna odpadních vod, Belokluky"
 WWTP_CONTACT = "provoz@vsch.cz"
-WWTP_SYSTEM_NAME = "NMM-CZ-01"
+WWTP_SYSTEM_NAME = "BEL-CZ-01"
 
 # SNMP OID values (simplified - basic responses)
 SNMP_VALUES = {

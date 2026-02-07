@@ -337,7 +337,7 @@ def root():
     """Root endpoint - API information"""
     return jsonify({
         'service': 'WWTP Control System API',
-        'facility': 'WWTP Nove Mesto nad Metuji (NMM-CZ-01)',
+        'facility': 'WWTP Belokluky',
         'operator': 'Vodohospodarska spolecnost Vychodni Cechy, a.s.',
         'capacity': '4.5k EO',
         'version': '3.0.0',
