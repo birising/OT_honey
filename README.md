@@ -79,10 +79,6 @@ open http://localhost  # Login: operator/operator123
 | maintenance | maint123 | Maintenance |
 | engineering | eng123 | Engineering |
 
-### Safety Banner
-
-All pages display: **SIMULATION -- OT/ICS HONEYPOT -- NOT A REAL PLANT**
-
 ## Simulator API
 
 ### GET /health
